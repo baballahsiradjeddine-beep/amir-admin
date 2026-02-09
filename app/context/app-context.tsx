@@ -33,7 +33,6 @@ import {
   removeFromTrash as apiRemoveFromTrash,
   resetUserDatabase as apiResetUserDatabase,
 } from '@/lib/api-client';
-import type { TrashItem as ApiTrashItem, FundTransaction as ApiFundTransaction } from '@/lib/api-client';
 
 export interface Company {
   id: string;
@@ -100,6 +99,21 @@ export interface CurrencyTransaction {
   createdAt: string;
 }
 
+export interface TrashItem {
+  id: string;
+  itemType: string;
+  itemData: any;
+  deletedAt: string;
+}
+
+export interface FundTransaction {
+  id: string;
+  type: 'set' | 'add' | 'withdraw';
+  amount: number;
+  description: string;
+  createdAt: string;
+}
+
 interface AppContextType {
   companies: Company[];
   fournisseurs: Fournisseur[];
@@ -108,7 +122,7 @@ interface AppContextType {
   currencyTransactions: CurrencyTransaction[];
   loading: boolean;
   fundCapital: { localCapital: number; foreignCapital: number };
-  fundTransactions: ApiFundTransaction[];
+  fundTransactions: FundTransaction[];
   addCompany: (company: Omit<Company, 'id' | 'createdAt'>) => Promise<void>;
   addFournisseur: (fournisseur: Omit<Fournisseur, 'id' | 'createdAt'>) => Promise<void>;
   addTransaction: (transaction: Omit<Transaction, 'id' | 'createdAt'>) => Promise<void>;
@@ -128,8 +142,8 @@ interface AppContextType {
   getCompanyById: (id: string) => Company | undefined;
   getFournisseurById: (id: string) => Fournisseur | undefined;
   saveFundCapital: (capital: number, password: string) => Promise<void>;
-  addFundTransaction: (transaction: Omit<ApiFundTransaction, 'id' | 'createdAt'>) => Promise<void>;
-  trash: ApiTrashItem[];
+  addFundTransaction: (transaction: Omit<FundTransaction, 'id' | 'createdAt'>) => Promise<void>;
+  trash: TrashItem[];
   loadTrash: () => Promise<void>;
   restoreFromTrash: (trashId: string) => Promise<void>;
   permanentlyDeleteFromTrash: (trashId: string) => Promise<void>;
@@ -151,8 +165,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localCapital: 0,
     foreignCapital: 0
   });
-  const [fundTransactions, setFundTransactions] = useState<ApiFundTransaction[]>([]);
-  const [trash, setTrash] = useState<ApiTrashItem[]>([]);
+  const [fundTransactions, setFundTransactions] = useState<FundTransaction[]>([]);
+  const [trash, setTrash] = useState<TrashItem[]>([]);
 
   // Load data from SQLite via API
   useEffect(() => {
@@ -533,7 +547,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const addFundTransaction = useCallback(
-    async (transaction: Omit<ApiFundTransaction, 'id' | 'createdAt'>) => {
+    async (transaction: Omit<FundTransaction, 'id' | 'createdAt'>) => {
       if (!user) return;
       try {
         const newTransaction = await apiAddFundTransaction(user.id, transaction);
