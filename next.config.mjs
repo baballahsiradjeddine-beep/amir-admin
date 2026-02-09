@@ -22,4 +22,4 @@ const nextConfig = {
   },
 }
 
-export default nextConfig; // Trigger Build 2026-02-09
+export default nextConfig; // Trigger Build 2026-02-09 [v2]
