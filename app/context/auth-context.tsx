@@ -162,7 +162,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         logout,
         updateProfile,
-        resetPassword: (email, _code, _newPass) => resetPassword(email), // Adapter for old signature if needed, or update consumers
+        resetPassword,
         isLoading,
         isInitialized,
         isSetupRequired,
