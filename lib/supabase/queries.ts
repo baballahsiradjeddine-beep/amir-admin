@@ -173,11 +173,12 @@ function mapCurrencyTransactionFromDB(db: any): CurrencyTransaction {
         exchangeRateUsed: Number(db.exchange_rate_used),
         commissionAmount: Number(db.commission_amount),
         description: db.description,
-        // Optional fields from schema that are not strictly in Interface but might be useful
-        // usdFournisseurId: db.usd_fournisseur_id,
-        // dzdCompanyId: db.dzd_company_id,
+        usdFournisseurId: db.usd_fournisseur_id,
+        dzdCompanyId: db.dzd_company_id,
+        usdDescription: db.usd_description,
+        dzdDescription: db.dzd_description,
         createdAt: db.created_at,
-        // updatedAt: db.updated_at
+        updatedAt: db.updated_at || db.created_at
     };
 }
 
@@ -190,6 +191,10 @@ function mapCurrencyTransactionToDB(app: Partial<CurrencyTransaction>, userId?: 
     if (app.exchangeRateUsed !== undefined) db.exchange_rate_used = app.exchangeRateUsed;
     if (app.commissionAmount !== undefined) db.commission_amount = app.commissionAmount;
     if (app.description !== undefined) db.description = app.description;
+    if (app.usdFournisseurId !== undefined) db.usd_fournisseur_id = app.usdFournisseurId;
+    if (app.dzdCompanyId !== undefined) db.dzd_company_id = app.dzdCompanyId;
+    if (app.usdDescription !== undefined) db.usd_description = app.usdDescription;
+    if (app.dzdDescription !== undefined) db.dzd_description = app.dzdDescription;
     return db;
 }
 
