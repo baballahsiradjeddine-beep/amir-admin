@@ -1,0 +1,33 @@
+{
+  "name": "Amir Nouadi - Dashboard",
+  "short_name": "Amir Nouadi",
+  "description": "منصة إدارة الشركات والمزودين الاحترافية - Professional Company & Supplier Management Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1a1a2e",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ],
+  "categories": [
+    "business",
+    "finance",
+    "productivity"
+  ],
+  "lang": "ar",
+  "dir": "rtl",
+  "prefer_related_applications": false
+}

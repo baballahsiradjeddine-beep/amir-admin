@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amir Nouadi Management</title>
+    <style>
+        body {
+            background-color: #020817;
+            /* Slate-950 matches your app */
+            color: #ffffff;
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        .container {
+            text-align: center;
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        .logo {
+            width: 120px;
+            height: 120px;
+            object-fit: contain;
+            margin-bottom: 20px;
+            filter: drop-shadow(0 0 10px rgba(255, 165, 0, 0.3));
+        }
+
+        h1 {
+            font-size: 24px;
+            margin: 0 0 10px 0;
+            color: #f8fafc;
+        }
+
+        p {
+            color: #94a3b8;
+            margin: 0 0 30px 0;
+            font-size: 14px;
+        }
+
+        .loader {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #1e293b;
+            border-bottom-color: #f97316;
+            /* Orange-500 */
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+
+        .status {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #64748b;
+            min-height: 20px;
+        }
+
+        .retry-btn {
+            display: none;
+            margin-top: 20px;
+            padding: 10px 24px;
+            background-color: #f97316;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .retry-btn:hover {
+            background-color: #ea580c;
+        }
+
+        @keyframes rotation {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Logo will be loaded from the same directory structure -->
+        <img src="../public/logo.png" alt="Logo" class="logo" onerror="this.src='../public/placeholder-logo.svg'">
+        <h1>Amir Nouadi Management</h1>
+        <p>جاري تشغيل النظام وتجهيز قاعدة البيانات...</p>
+
+        <div id="loader" class="loader"></div>
+
+        <div id="status" class="status">جاري الاتصال بالخادم...</div>
+
+        <button id="retryBtn" class="retry-btn" onclick="checkServer()">إعادة المحاولة</button>
+    </div>
+
+    <script>
+        // const { ipcRenderer } = require('electron'); // Not needed
+        let attempts = 0;
+        const maxAttemptsBeforeButton = 15; // Show button after 15 seconds roughly
+
+        function checkServer() {
+            document.getElementById('loader').style.display = 'inline-block';
+            document.getElementById('retryBtn').style.display = 'none';
+            document.getElementById('status').innerText = 'جاري الاتصال...';
+
+            fetch('http://localhost:3000')
+                .then(response => {
+                    if (response.status === 200) {
+                        document.getElementById('status').innerText = 'تم الاتصال! جاري الفتح...';
+                        // Tell main process to switch view
+                        window.location.href = 'http://localhost:3000';
+                    } else {
+                        throw new Error('Server starting...');
+                    }
+                })
+                .catch(err => {
+                    attempts++;
+                    console.log('Server not ready yet...', err);
+
+                    if (attempts > maxAttemptsBeforeButton) {
+                        document.getElementById('status').innerText = 'تأخر الخادم في الاستجابة.';
+                        document.getElementById('loader').style.display = 'none';
+                        document.getElementById('retryBtn').style.display = 'inline-block';
+                    } else {
+                        // Retry automatically
+                        setTimeout(checkServer, 1000);
+                    }
+                });
+        }
+
+        // Start checking immediately
+        checkServer();
+    </script>
+</body>
+
+</html>
