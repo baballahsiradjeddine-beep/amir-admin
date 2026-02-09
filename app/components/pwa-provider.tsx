@@ -44,9 +44,13 @@ export function PWAProvider({ children }: { children: React.ReactNode }) {
 
       // Delay prompt showing to not annoy user immediately
       const timer = setTimeout(() => {
-        // Only show if not already installed/standalone
+        // Only show if:
+        // 1. Not already installed/standalone
+        // 2. Is a mobile device
         const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone;
-        if (!isStandalone) {
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+        if (!isStandalone && isMobile) {
           setShowInstallPrompt(true);
         }
       }, 5000);
