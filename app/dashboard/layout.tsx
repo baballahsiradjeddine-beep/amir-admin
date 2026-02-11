@@ -11,6 +11,7 @@ import { MobileHeader } from '@/app/components/mobile-header';
 import { AppProvider } from '@/app/context/app-context';
 import { ToasterProvider } from '@/app/components/toaster-provider';
 import { ErrorBoundary } from '@/app/components/error-boundary';
+import { AutoBackupTrigger } from '@/components/auto-backup-trigger';
 
 export default function DashboardLayout({
   children,
@@ -46,6 +47,7 @@ export default function DashboardLayout({
 
   return (
     <AppProvider>
+      <AutoBackupTrigger />
       <ErrorBoundary>
         <div className="flex min-h-screen bg-background" dir="rtl">
           <Sidebar />

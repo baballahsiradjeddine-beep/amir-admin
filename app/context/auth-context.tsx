@@ -9,6 +9,8 @@ interface User {
   id: string;
   email: string;
   backupPath?: string;
+  googleRefreshToken?: string;
+  googleEmail?: string;
 }
 
 interface AuthContextType {
@@ -39,6 +41,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       id: sbUser.id,
       email: sbUser.email || '',
       backupPath: sbUser.user_metadata?.backup_path || undefined,
+      googleRefreshToken: sbUser.user_metadata?.google_refresh_token || undefined,
+      googleEmail: sbUser.user_metadata?.google_email || undefined,
     };
   };
 

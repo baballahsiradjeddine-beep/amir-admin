@@ -38,7 +38,7 @@ const navigationItems = [
     icon: Truck,
   },
   {
-    label: 'شركات العملة',
+    label: 'مكاتب الصرف',
     href: '/dashboard/currency',
     icon: DollarSign,
   },

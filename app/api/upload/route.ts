@@ -6,8 +6,22 @@ import { existsSync } from 'fs'
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData()
-    const file = formData.get('file') as File
+    // Check if we can parse the content type
+    const contentType = request.headers.get('content-type') || ''
+
+    if (!contentType.includes('multipart/form-data')) {
+      return NextResponse.json({ error: 'Content type must be multipart/form-data' }, { status: 400 })
+    }
+
+    let file: File | null = null
+
+    try {
+      const formData = await request.formData()
+      file = formData.get('file') as File
+    } catch (e) {
+      console.error('[v0] Error parsing form data:', e)
+      return NextResponse.json({ error: 'Failed to parse form data. Please ensure you are sending a valid file.' }, { status: 400 })
+    }
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 })
@@ -34,15 +48,22 @@ export async function POST(request: NextRequest) {
 
     if (hasBlobToken) {
       // Upload to Vercel Blob
-      const blob = await put(filename, file, {
-        access: 'public',
-      })
+      try {
+        const blob = await put(filename, file, {
+          access: 'public',
+        })
 
-      return NextResponse.json({
-        url: blob.url,
-        filename: file.name,
-        size: file.size,
-      })
+        return NextResponse.json({
+          url: blob.url,
+          filename: file.name,
+          size: file.size,
+        })
+      } catch (blobError) {
+        console.error('[v0] Vercel Blob upload error:', blobError)
+        // Fallback to local if blob fails (optional, but good for stability)
+        // For now, let's report the error
+        return NextResponse.json({ error: 'Cloud storage upload failed' }, { status: 500 })
+      }
     } else {
       // Local Fallback Storage
       const uploadsDir = path.join(process.cwd(), 'public', 'uploads')
@@ -58,6 +79,8 @@ export async function POST(request: NextRequest) {
 
       await fs.writeFile(filePath, buffer)
 
+      // Get the host from headers for absolute URL if needed, or just return relative
+      // Relative URL is usually fine for Next.js <Image> or standard <img> tags
       return NextResponse.json({
         url: `/uploads/${filename}`,
         filename: file.name,
@@ -66,7 +89,7 @@ export async function POST(request: NextRequest) {
     }
   } catch (error) {
     console.error('[v0] Upload error:', error)
-    return NextResponse.json({ error: 'Upload failed' }, { status: 500 })
+    return NextResponse.json({ error: `Upload failed: ${(error as any).message}` }, { status: 500 })
   }
 }
 

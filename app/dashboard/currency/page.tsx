@@ -96,7 +96,7 @@ export default function CurrencyPage() {
           description,
           image,
         });
-        toast.success('تم تحديث شركة العملة بنجاح');
+        toast.success('تم تحديث مكتب الصرف بنجاح');
         setEditingId(null);
       } else {
         await addCurrencyCompany({
@@ -111,7 +111,7 @@ export default function CurrencyPage() {
           image,
           isActive: true,
         });
-        toast.success('تمت إضافة شركة العملة بنجاح');
+        toast.success('تمت إضافة مكتب الصرف بنجاح');
       }
       setName('');
       setBaseCurrencies(['USD']);
@@ -158,7 +158,7 @@ export default function CurrencyPage() {
     try {
       setIsDeleting(true);
       await deleteCurrencyCompany(companyToDelete);
-      toast.success('تم حذف شركة العملة بنجاح');
+      toast.success('تم حذف مكتب الصرف بنجاح');
       setDeleteDialogOpen(false);
       setCompanyToDelete(null);
     } catch (error) {
@@ -193,18 +193,18 @@ export default function CurrencyPage() {
         const formData = new FormData();
         formData.append('file', file);
 
-        const response = await fetch('/api/upload', {
+        const response = await fetch('/api/upload/', {
           method: 'POST',
           body: formData,
         });
 
+        const data = await response.json();
+
         if (!response.ok) {
-          const error = await response.json();
-          toast.error(error.error || 'فشل رفع الصورة');
+          toast.error(data.error || 'فشل رفع الصورة');
           return;
         }
 
-        const data = await response.json();
         setImage(data.url);
         toast.success('تم رفع الصورة بنجاح');
       } catch (error) {
@@ -229,7 +229,7 @@ export default function CurrencyPage() {
           <div>
             <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent flex items-center gap-3 font-heading">
               <DollarSign className="h-10 w-10 text-primary" />
-              شركات العملة
+              مكاتب الصرف
             </h1>
             <p className="text-muted-foreground mt-1 font-medium">إدارة شركات تحويل العملات والأسعار الصرفية بكفاءة</p>
           </div>
@@ -244,17 +244,17 @@ export default function CurrencyPage() {
             <DialogTrigger asChild>
               <Button className="gap-2 bg-primary text-primary-foreground hover:bg-orange-700 shadow-lg">
                 <Plus className="h-4 w-4" />
-                شركة عملة جديدة
+                مكتب صرف جديد
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
-                <DialogTitle>{editingId ? 'تعديل شركة العملة' : 'إضافة شركة عملة جديدة'}</DialogTitle>
+                <DialogTitle>{editingId ? 'تعديل مكتب الصرف' : 'إضافة مكتب صرف جديد'}</DialogTitle>
               </DialogHeader>
 
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="cc-name">اسم الشركة</Label>
+                  <Label htmlFor="cc-name">اسم المكتب</Label>
                   <Input
                     id="cc-name"
                     placeholder="مثال: صرافة القاهرة"
@@ -364,7 +364,7 @@ export default function CurrencyPage() {
                   <Label htmlFor="cc-description">الوصف (اختياري)</Label>
                   <Textarea
                     id="cc-description"
-                    placeholder="أضف وصف لشركة العملة"
+                    placeholder="أضف وصف لمكتب الصرف"
                     value={description || ''}
                     onChange={(e) => setDescription(e.target.value)}
                     className="resize-none min-h-20"
@@ -377,7 +377,7 @@ export default function CurrencyPage() {
                   size="lg"
                   disabled={isSubmitting}
                 >
-                  {isSubmitting ? (editingId ? 'جاري التحديث...' : 'جاري الإضافة...') : (editingId ? 'تحديث الشركة' : 'إضافة الشركة')}
+                  {isSubmitting ? (editingId ? 'جاري التحديث...' : 'جاري الإضافة...') : (editingId ? 'تحديث المكتب' : 'إضافة المكتب')}
                 </Button>
               </div>
             </DialogContent>
@@ -392,11 +392,11 @@ export default function CurrencyPage() {
               <Card className="p-6 border-0 card-premium">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground font-medium">إجمالي الشركات</p>
+                    <p className="text-sm text-muted-foreground font-medium">إجمالي المكاتب</p>
                     <p className="text-3xl font-bold font-heading text-primary mt-2">
                       {totalCompanies}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1 font-bold">شركات صرافة</p>
+                    <p className="text-xs text-muted-foreground mt-1 font-bold">مكاتب صرافة</p>
                   </div>
                   <div className="p-3 bg-primary/10 rounded-xl">
                     <Building2 className="h-8 w-8 text-primary" />
@@ -408,7 +408,7 @@ export default function CurrencyPage() {
               <Card className="p-6 border-0 card-premium">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground font-medium">الشركات النشطة</p>
+                    <p className="text-sm text-muted-foreground font-medium">المكاتب النشطة</p>
                     <p className="text-3xl font-bold font-heading text-green-600 mt-2">
                       {activeCompanies}
                     </p>
@@ -444,7 +444,7 @@ export default function CurrencyPage() {
                         {isOwedToCompanies ? '+' : ''}{formatCurrency(Math.abs(dzdTotal))}
                       </p>
                       <p className={`text-[10px] font-black mt-2 bg-muted/50 w-fit px-3 py-1 rounded-full ${isOwedToCompanies ? 'text-red-700' : 'text-green-700'}`}>
-                        {isOwedToCompanies ? 'شركات العملة تسالك هذا المبلغ الإجمالي' : 'لديك هذا المبلغ الإجمالي عند الشركات'}
+                        {isOwedToCompanies ? 'مكاتب الصرف تسالك هذا المبلغ الإجمالي' : 'لديك هذا المبلغ الإجمالي عند المكاتب'}
                       </p>
                       <p className={`text-xs ${isOwedToCompanies ? 'text-red-600' : 'text-green-600'} mt-2 font-black uppercase tracking-widest`}>DZD</p>
                     </div>
@@ -532,7 +532,7 @@ export default function CurrencyPage() {
                                 {dzdBalance > 0 ? '+' : ''}{dzdBalance.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')}
                               </p>
                               <div className={`mt-2 px-3 py-1 rounded-full text-[9px] font-bold uppercase ${dzdBalance > 0 ? 'bg-red-500/20 text-red-700' : 'bg-green-500/20 text-green-700'}`}>
-                                {dzdBalance > 0 ? 'شركة العملة تسالك هذا المبلغ' : 'لديك مبلغ عند الشركة'}
+                                {dzdBalance > 0 ? 'مكتب الصرف يسالك هذا المبلغ' : 'لديك مبلغ عند المكتب'}
                               </div>
                             </div>
                           </div>
@@ -594,8 +594,8 @@ export default function CurrencyPage() {
             <div className="space-y-4">
               <DollarSign className="h-12 w-12 mx-auto text-muted-foreground/50" />
               <div>
-                <h3 className="text-lg font-semibold text-foreground">لا توجد شركات عملة</h3>
-                <p className="text-muted-foreground mt-1">ابدأ بإضافة شركة عملة جديدة لإدارة عمليات تحويل العملات</p>
+                <h3 className="text-lg font-semibold text-foreground">لا توجد مكاتب صرف</h3>
+                <p className="text-muted-foreground mt-1">ابدأ بإضافة مكتب صرف جديد لإدارة عمليات تحويل العملات</p>
               </div>
               <Dialog open={isOpen} onOpenChange={(newOpen) => {
                 if (!newOpen) {
@@ -607,7 +607,7 @@ export default function CurrencyPage() {
                 <DialogTrigger asChild>
                   <Button className="gap-2 bg-primary text-primary-foreground hover:bg-orange-700 mx-auto">
                     <Plus className="h-4 w-4" />
-                    إضافة شركة عملة الآن
+                    إضافة مكتب صرف الآن
                   </Button>
                 </DialogTrigger>
               </Dialog>
@@ -618,8 +618,8 @@ export default function CurrencyPage() {
           open={deleteDialogOpen}
           onOpenChange={setDeleteDialogOpen}
           onConfirm={confirmDelete}
-          title="حذف شركة العملة"
-          description="هل أنت متأكد من حذف هذه الشركة؟ سيتم حذف جميع المعاملات المرتبطة بها ونقلها إلى سلة المحذوفات."
+          title="حذف مكتب الصرف"
+          description="هل أنت متأكد من حذف هذا المكتب؟ سيتم حذف جميع المعاملات المرتبطة به ونقلها إلى سلة المحذوفات."
           isDeleting={isDeleting}
         />
       </div>
@@ -628,8 +628,8 @@ export default function CurrencyPage() {
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
         onConfirm={confirmDelete}
-        title="حذف الشركة"
-        description="هل أنت متأكد من حذف شركة العملة هذه؟ سيتم نقل جميع البيانات المتعلقة بها إلى سلة المهملات."
+        title="حذف مكتب الصرف"
+        description="هل أنت متأكد من حذف مكتب الصرف هذا؟ سيتم نقل جميع البيانات المتعلقة به إلى سلة المهملات."
         isDeleting={isDeleting}
       />
     </div>

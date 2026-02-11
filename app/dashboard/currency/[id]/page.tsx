@@ -220,7 +220,7 @@ export default function CurrencyCompanyDetailsPage() {
     return (
       <div className="min-h-screen space-y-6 p-8 animate-in fade-in duration-500">
         <Card className="p-12 text-center border-0 card-premium">
-          <p className="text-muted-foreground font-bold font-heading">لم يتم العثور على شركة العملة</p>
+          <p className="text-muted-foreground font-bold font-heading">لم يتم العثور على مكتب الصرف</p>
           <Button onClick={() => router.back()} variant="ghost" className="mt-4 gap-2">
             <ArrowLeft className="h-4 w-4" />
             العودة للخلف
@@ -244,7 +244,7 @@ export default function CurrencyCompanyDetailsPage() {
               <h1 className="text-4xl font-black font-heading tracking-tight text-foreground">
                 {company.name}
               </h1>
-              <p className="text-muted-foreground font-bold mt-1">تفاصيل شركة العملة والمعاملات</p>
+              <p className="text-muted-foreground font-bold mt-1">تفاصيل مكتب الصرف والمعاملات</p>
             </div>
           </div>
         </div>
@@ -366,7 +366,7 @@ export default function CurrencyCompanyDetailsPage() {
               <p className="text-sm text-muted-foreground mt-4 font-bold uppercase tracking-widest">CURRENT DZD BALANCE (NET)</p>
             </div>
             <div className={`mt-6 px-4 py-2 rounded-xl text-xs font-bold w-fit ${(totals.totalIncome - totals.totalOutcome) > 0 ? 'bg-red-500/10 text-red-700' : 'bg-green-500/10 text-green-700'}`}>
-              {(totals.totalIncome - totals.totalOutcome) > 0 ? 'شركة العملة تسالك هذا المبلغ' : 'لديك مبلغ عند الشركة'}
+              {(totals.totalIncome - totals.totalOutcome) > 0 ? 'مكتب الصرف يسالك هذا المبلغ' : 'لديك مبلغ عند المكتب'}
             </div>
           </Card>
         </div>

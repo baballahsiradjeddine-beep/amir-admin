@@ -143,18 +143,18 @@ export default function CompaniesPage() {
         const formData = new FormData();
         formData.append('file', file);
 
-        const response = await fetch('/api/upload', {
+        const response = await fetch('/api/upload/', {
           method: 'POST',
           body: formData,
         });
 
+        const data = await response.json();
+
         if (!response.ok) {
-          const error = await response.json();
-          toast.error(error.error || 'فشل رفع الصورة');
+          toast.error(data.error || 'فشل رفع الصورة');
           return;
         }
 
-        const data = await response.json();
         setImage(data.url);
         toast.success('تم رفع الصورة بنجاح');
       } catch (error) {

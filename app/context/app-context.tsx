@@ -228,7 +228,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     loadData();
   }, [user]);
 
-  const currencyCompanies = rawCurrencyCompanies;
+  const currencyCompanies = React.useMemo(() => {
+    return rawCurrencyCompanies.map(cc => {
+      // Calculate balance from currency transactions
+      // DZD Balance for Exchange Office:
+      // - Income (Recieved DZD): When we GIVE them USD (toAmount is DZD if fromAmount is USD).
+      // - Outcome (Paid DZD): When we TAKE DZD (toAmount is DZD if fromAmount is 0).
+      // Let's look at transaction structure:
+      // If fromAmount > 0 (We gave something, they gave us something):
+      //    If Recieved is DZD (we bought DZD): +toAmount
+      // If fromAmount == 0 (We took something, they gave us something - usually Makhruj):
+      //    If We took DZD: -toAmount
+
+      const companyT = rawCurrencyTransactions.filter(t => t.currencyCompanyId === cc.id);
+
+      const balance = companyT.reduce((sum, t) => {
+        // Logic specific to how 'addCurrencyTransaction' saves data:
+        // SCENARIO 1: DZD Only (Makhruj) -> fromAmount: 0, toAmount: DZD. This subtracts from their balance.
+        // SCENARIO 2: Exchange (We gave USD, got DZD) -> fromAmount: USD, toAmount: DZD. This adds to their balance.
+        // wait, "Exchange Office Balance" usually means "How much DZD do we have WITH them" or "How much DZD do they have of ours"?
+        // Usually "Capital" means OUR money.
+        // If we "Withdraw" (Makhruj) DZD, our capital there decreases.
+        // So:
+        // - Withdrawal (fromAmount = 0): -toAmount
+        // - Deposit/Exchange (fromAmount > 0): +toAmount (Assuming we exchanged USD for DZD into the office)
+
+        if (t.fromAmount === 0) {
+          return sum - t.toAmount;
+        } else {
+          return sum + t.toAmount;
+        }
+      }, 0);
+
+      return { ...cc, balance };
+    });
+  }, [rawCurrencyCompanies, rawCurrencyTransactions]);
 
   // Memoized DERIVED state: Companies with LIVE working capital (calculated from transactions)
   const companies = React.useMemo(() => {
@@ -646,7 +680,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             fournisseurId: transaction.usdFournisseurId,
             amount: -transaction.fromAmount,
             rate: 1,
-            description: `تحويل عملة: ${transaction.fromAmount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} USD من شركة العملة : ${currencyCompany?.name || 'غير محدد'}`,
+            description: `تحويل عملة: ${transaction.fromAmount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} USD من مكتب الصرف : ${currencyCompany?.name || 'غير محدد'}`,
           };
           const fournisseurTx = await apiAddTransaction(user.id, fournisseurTransaction);
           setRawTransactions((prev: Transaction[]) => [...prev, fournisseurTx]);
@@ -741,7 +775,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (lt.type === 'fournisseur' && (updates.fromAmount !== undefined || updates.currencyCompanyId !== undefined)) {
             await apiUpdateTransaction(lt.id, {
               amount: -mergedTx.fromAmount,
-              description: `تحويل عملة: ${mergedTx.fromAmount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} USD من شركة العملة : ${currencyCompany?.name || 'غير محدد'}`
+              description: `تحويل عملة: ${mergedTx.fromAmount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} USD من مكتب الصرف : ${currencyCompany?.name || 'غير محدد'}`
             });
           } else if (lt.type === 'company' && (newToAmount !== existingTx.toAmount || updates.fromAmount !== undefined || updates.exchangeRateUsed !== undefined)) {
             await apiUpdateTransaction(lt.id, {

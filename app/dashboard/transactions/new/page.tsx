@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppData } from '@/app/context/app-context';
 import { Button } from '@/components/ui/button';
@@ -14,9 +14,19 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from '@/components/ui/badge';
 import { CurrencyInput } from '@/components/currency-input';
-import { Building2, Truck, ArrowLeftRight, Banknote, RefreshCw, Plus, ArrowDownRight, Coins, ChevronRight } from 'lucide-react';
+import { Building2, Truck, ArrowLeftRight, Banknote, RefreshCw, Plus, ArrowDownRight, Coins, ChevronRight, AlertTriangle } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
@@ -28,7 +38,8 @@ export default function NewTransactionPage() {
         fournisseurs,
         currencyCompanies,
         addTransaction,
-        addCurrencyTransaction
+        addCurrencyTransaction,
+        fundCapital
     } = useAppData();
 
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -57,6 +68,25 @@ export default function NewTransactionPage() {
     const [usdToDzdRate, setUsdToDzdRate] = useState('1');
     const [exchangeOperation, setExchangeOperation] = useState<'multiply' | 'divide'>('multiply');
     const [convertToLocal, setConvertToLocal] = useState(false);
+
+    // Validation State
+    const [negativeCapitalAlertOpen, setNegativeCapitalAlertOpen] = useState(false);
+    const [negativeCapitalValue, setNegativeCapitalValue] = useState(0);
+    const [officeBalanceWarningOpen, setOfficeBalanceWarningOpen] = useState(false);
+    const [officeBalanceWarningValue, setOfficeBalanceWarningValue] = useState(0);
+
+    const currentCapital = useMemo(() => {
+        const fundBase = (typeof fundCapital === 'object' && fundCapital !== null)
+            ? (fundCapital.localCapital || 0)
+            : (typeof fundCapital === 'number' ? fundCapital : 0);
+
+        const companiesBalance = companies.reduce((sum, c) => sum + (c.workingCapital || 0), 0);
+        const currencyCompaniesBalance = currencyCompanies.reduce((sum, cc) => sum + (cc.balance || 0), 0);
+
+        return fundBase + companiesBalance + currencyCompaniesBalance;
+    }, [fundCapital, companies, currencyCompanies]);
+
+    // ... rest of the component
 
     const calculateResult = () => {
         try {
@@ -90,6 +120,17 @@ export default function NewTransactionPage() {
 
         const transactionAmount = transactionType === 'income' ? centimes : -centimes;
 
+        // Validation: Prevent outcome if it leads to negative GLOBAL capital
+        if (selectedType === 'company' && transactionType === 'outcome') {
+            // Check against Global Capital (Fund + Companies + Exchange Offices)
+            const newCapital = currentCapital - centimes;
+            if (newCapital < 0) {
+                setNegativeCapitalValue(newCapital);
+                setNegativeCapitalAlertOpen(true);
+                return;
+            }
+        }
+
         try {
             setIsSubmitting(true);
             await addTransaction({
@@ -108,6 +149,40 @@ export default function NewTransactionPage() {
             toast.error('حدث خطأ أثناء إضافة المعاملة');
         } finally {
             setIsSubmitting(false);
+        }
+    };
+
+    const executeDzdTransaction = async () => {
+        const getCleanNumber = (val: string) => {
+            if (!val) return 0;
+            const cleaned = val.replace(/[^\d.]/g, '');
+            const parsed = parseFloat(cleaned);
+            return isNaN(parsed) ? 0 : parsed;
+        };
+        const dzdValue = getCleanNumber(dzdAmount);
+
+        try {
+            setIsSubmitting(true);
+            await addCurrencyTransaction({
+                currencyCompanyId: dzdCurrencyCompanyId,
+                fromAmount: 0,
+                toAmount: dzdValue,
+                exchangeRateUsed: 1,
+                commissionAmount: 0,
+                description: dzdDescription || `تحويل دينار (مخروج) إلى ${currencyCompanies.find(cc => cc.id === dzdCurrencyCompanyId)?.name || 'مكتب صرف'}`,
+                usdFournisseurId: undefined,
+                dzdCompanyId: undefined,
+                usdDescription: undefined,
+                dzdDescription: dzdDescription || undefined,
+            });
+            toast.success('تمت إضافة المعاملة بنجاح');
+            router.push('/dashboard');
+        } catch (error) {
+            console.error('Error adding transaction:', error);
+            toast.error('حدث خطأ أثناء إضافة المعاملة');
+        } finally {
+            setIsSubmitting(false);
+            setOfficeBalanceWarningOpen(false);
         }
     };
 
@@ -137,23 +212,38 @@ export default function NewTransactionPage() {
                     return;
                 }
                 if (!dzdCurrencyCompanyId) {
-                    toast.error('يرجى اختيار شركة العملة');
+                    toast.error('يرجى اختيار مكتب الصرف');
                     setIsSubmitting(false);
                     return;
                 }
 
-                await addCurrencyTransaction({
-                    currencyCompanyId: dzdCurrencyCompanyId,
-                    fromAmount: 0,
-                    toAmount: dzdValue,
-                    exchangeRateUsed: 1,
-                    commissionAmount: 0,
-                    description: dzdDescription || `تحويل دينار (مخروج) إلى ${currencyCompanies.find(cc => cc.id === dzdCurrencyCompanyId)?.name || 'شركة عملة'}`,
-                    usdFournisseurId: undefined,
-                    dzdCompanyId: undefined,
-                    usdDescription: undefined,
-                    dzdDescription: dzdDescription || undefined,
-                });
+                // 1. Global Capital Validation (Blocking)
+                if (currencyCompanyId === 'dzd' && dzdCurrencyCompanyId) {
+                    const newCapital = currentCapital - dzdValue;
+                    if (newCapital < 0) {
+                        setNegativeCapitalValue(newCapital);
+                        setNegativeCapitalAlertOpen(true);
+                        setIsSubmitting(false);
+                        return;
+                    }
+                }
+
+                // 2. Office Balance Validation (Warning)
+                if (currencyCompanyId === 'dzd' && dzdCurrencyCompanyId) {
+                    const currencyCompany = currencyCompanies.find(cc => cc.id === dzdCurrencyCompanyId);
+                    if (currencyCompany) {
+                        const currentBalance = currencyCompany.balance || 0;
+                        if (currentBalance - dzdValue < 0) {
+                            setOfficeBalanceWarningValue(currentBalance);
+                            setOfficeBalanceWarningOpen(true);
+                            setIsSubmitting(false);
+                            return;
+                        }
+                    }
+                }
+
+                // Proceed if all good
+                await executeDzdTransaction();
             }
             else if (currencyCompanyId === 'both') {
                 if (usdValue <= 0) {
@@ -461,7 +551,7 @@ export default function NewTransactionPage() {
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {[
-                                        { id: 'dzd', icon: Coins, title: 'دينار فقط', sub: 'سحب دينار من الصندوق لشركة عملة', color: 'green' },
+                                        { id: 'dzd', icon: Coins, title: 'دينار فقط', sub: 'سحب دينار من الصندوق لمكتب صرف', color: 'green' },
                                         { id: 'both', icon: ArrowLeftRight, title: 'عملة مركبة', sub: 'شراء دولار/يوان وتحويله لمزود', color: 'purple' }
                                     ].map((type) => (
                                         <button
@@ -513,9 +603,9 @@ export default function NewTransactionPage() {
 
                                                         <div className="space-y-4">
                                                             <div className="space-y-2">
-                                                                <Label className="font-bold text-muted-foreground">شركة العملة المستفيدة</Label>
+                                                                <Label className="font-bold text-muted-foreground">مكتب الصرف المستفيد</Label>
                                                                 <Select value={dzdCurrencyCompanyId} onValueChange={setDzdCurrencyCompanyId}>
-                                                                    <SelectTrigger className="h-12 bg-muted/30 border-border/50"><SelectValue placeholder="اختر شركة العملة..." /></SelectTrigger>
+                                                                    <SelectTrigger className="h-12 bg-muted/30 border-border/50"><SelectValue placeholder="اختر مكتب الصرف..." /></SelectTrigger>
                                                                     <SelectContent className="rounded-xl">
                                                                         {currencyCompanies.map(c => <SelectItem key={c.id} value={c.id} className="py-3 text-base">{c.name}</SelectItem>)}
                                                                     </SelectContent>
@@ -553,7 +643,7 @@ export default function NewTransactionPage() {
                                                 </div>
                                                 <div>
                                                     <h4 className="text-2xl font-black text-foreground">تحويل مباشر</h4>
-                                                    <p className="text-muted-foreground max-w-xs mx-auto mt-2">سيتم خصم المبلغ من الصندوق وتسجيله كدين على شركة العملة المختارة.</p>
+                                                    <p className="text-muted-foreground max-w-xs mx-auto mt-2">سيتم خصم المبلغ من الصندوق وتسجيله كدين على مكتب الصرف المختار.</p>
                                                 </div>
                                             </div>
                                         </div>
@@ -574,7 +664,7 @@ export default function NewTransactionPage() {
 
                                                         <div className="space-y-4">
                                                             <div className="space-y-2">
-                                                                <Label className="font-bold text-muted-foreground">شركة العملة الوسيطة</Label>
+                                                                <Label className="font-bold text-muted-foreground">مكتب الصرف الوسيط</Label>
                                                                 <Select value={dzdCurrencyCompanyId} onValueChange={setDzdCurrencyCompanyId}>
                                                                     <SelectTrigger className="h-12 bg-muted/30 border-border/50"><SelectValue placeholder="اختر..." /></SelectTrigger>
                                                                     <SelectContent>{currencyCompanies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
@@ -713,6 +803,67 @@ export default function NewTransactionPage() {
                     )}
                 </Button>
             </div>
+
+            <AlertDialog open={negativeCapitalAlertOpen} onOpenChange={setNegativeCapitalAlertOpen}>
+                <AlertDialogContent className="max-w-xl border-2 border-destructive bg-background p-8 shadow-2xl">
+                    <AlertDialogHeader className="items-center text-center space-y-4">
+                        <div className="p-4 rounded-full bg-destructive/10 text-destructive mb-2">
+                            <AlertTriangle className="h-12 w-12" />
+                        </div>
+                        <AlertDialogTitle className="text-2xl font-bold text-destructive">تنبيه: رصيد غير كافي</AlertDialogTitle>
+                        <AlertDialogDescription className="text-lg text-foreground/90 font-medium">
+                            لا يمكن إخراج هذا المبلغ لأن رأس المال سيصبح بالسالب.
+                            <br />
+                            <span className="flex items-center justify-center gap-2 mt-4 dir-ltr" dir="ltr">
+                                <span className="text-xl font-bold font-mono text-destructive">
+                                    {formatCurrency(negativeCapitalValue)}
+                                </span>
+                                <span className="text-sm font-bold text-muted-foreground">DZD</span>
+                            </span>
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter className="mt-8 justify-center sm:justify-center">
+                        <AlertDialogCancel className="w-full sm:w-auto px-32 py-4 text-xl bg-destructive hover:bg-destructive/90 text-white font-bold border-0 shadow-lg shadow-destructive/20 transition-all hover:scale-105 active:scale-95">
+                            أعد المحاولة
+                        </AlertDialogCancel>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            <AlertDialog open={officeBalanceWarningOpen} onOpenChange={setOfficeBalanceWarningOpen}>
+                <AlertDialogContent className="max-w-xl border-2 border-orange-500 bg-background p-8 z-[100] shadow-2xl">
+                    <AlertDialogHeader className="items-center text-center space-y-4">
+                        <div className="p-4 rounded-full bg-orange-500/10 text-orange-600 mb-2">
+                            <AlertTriangle className="h-12 w-12" />
+                        </div>
+                        <AlertDialogTitle className="text-2xl font-bold text-orange-600">تنبيه: رصيد المكتب غير كافي</AlertDialogTitle>
+                        <AlertDialogDescription className="text-lg text-foreground/90 font-medium text-center">
+                            المبلغ الذي تحاول إرساله أكبر من الرصيد الحالي لمكتب الصرف.
+                            <div className="py-4 flex flex-col items-center justify-center gap-2">
+                                <span className="text-sm text-muted-foreground">الرصيد المتوفر حالياً لهذا المكتب:</span>
+                                <span className="text-xl font-black font-mono text-foreground dir-ltr" dir="ltr">
+                                    {formatCurrency(officeBalanceWarningValue)} DZD
+                                </span>
+                            </div>
+                            هل أنت متأكد من إتمام العملية؟
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter className="mt-8 gap-4 justify-center sm:justify-center">
+                        <AlertDialogCancel className="w-full sm:w-auto px-8 py-2 text-lg font-bold">
+                            إلغاء
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={(e) => {
+                                e.preventDefault();
+                                executeDzdTransaction();
+                            }}
+                            className="w-full sm:w-auto px-12 py-2 text-lg bg-orange-600 hover:bg-orange-700 text-white font-bold border-0 shadow-lg transition-all"
+                        >
+                            نعم، متأكد
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

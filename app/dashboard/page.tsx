@@ -314,7 +314,7 @@ export default function HomePage() {
                       <div className="space-y-3">
                         <div className="flex items-center justify-between px-2">
                           <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2">
-                            <Banknote className="h-3.5 w-3.5 text-green-500" /> شركات العملة ({searchResults.currencyCompanies.length})
+                            <Banknote className="h-3.5 w-3.5 text-green-500" /> مكاتب الصرف ({searchResults.currencyCompanies.length})
                           </p>
                         </div>
                         <div className="grid grid-cols-1 gap-1">
@@ -528,7 +528,7 @@ export default function HomePage() {
                   <span className="text-xl font-black font-heading text-indigo-600">{fournisseurs.length}</span>
                 </div>
                 <div className="flex justify-between items-center p-3 rounded-xl bg-fuchsia-500/5 border border-fuchsia-500/10">
-                  <span className="text-sm font-bold text-muted-foreground">عدد شركات العملة</span>
+                  <span className="text-sm font-bold text-muted-foreground">عدد مكاتب الصرف</span>
                   <span className="text-xl font-black font-heading text-fuchsia-600">
                     {currencyCompanies.length}
                   </span>

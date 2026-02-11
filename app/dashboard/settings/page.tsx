@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '@/app/context/auth-context';
 import { useAppData } from '@/app/context/app-context';
 import { useTheme } from 'next-themes';
+import { supabase } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -38,7 +39,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { AlertCircle, CheckCircle, Lock, Palette, Calendar, Trash2, RotateCcw, Building2, Truck, FileText, Banknote, ArrowLeftRight, Wallet, Plus, ShieldCheck, PlusCircle, MinusCircle, History as HistoryIcon, Clock, ShieldAlert, ChevronLeft, Loader2, KeyRound, FolderOpen } from 'lucide-react';
+import { AlertCircle, CheckCircle, Lock, Palette, Calendar, Trash2, RotateCcw, Building2, Truck, FileText, Banknote, ArrowLeftRight, Wallet, Plus, ShieldCheck, PlusCircle, MinusCircle, History as HistoryIcon, Clock, ShieldAlert, ChevronLeft, Loader2, KeyRound, FolderOpen, Cloud } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
@@ -100,13 +101,189 @@ export default function SettingsPage() {
   const [isResettingApp, setIsResettingApp] = useState(false);
   const [isEmptyingTrash, setIsEmptyingTrash] = useState(false);
   const [emptyTrashDialogOpen, setEmptyTrashDialogOpen] = useState(false);
+  const [autoCloudBackup, setAutoCloudBackup] = useState(false);
+  const [lastAutoBackup, setLastAutoBackup] = useState<string | null>(null);
+  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+
+  // Manual Export/Import Logic
+  const handleManualExport = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error('يرجى تسجيل الدخول أولاً');
+        return;
+      }
+
+      toast.promise(
+        async () => {
+          const res = await fetch('/api/backup', {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`
+            }
+          });
+
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'فشل التصدير');
+          }
+
+          const blob = await res.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = url;
+          const contentDisposition = res.headers.get('Content-Disposition');
+          let fileName = `amir-backup-${new Date().toISOString().split('T')[0]}.zip`;
+          if (contentDisposition) {
+            const match = contentDisposition.match(/filename="?([^"]+)"?/);
+            if (match && match[1]) fileName = match[1];
+          }
+
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+        },
+        {
+          loading: 'جاري تحضير النسخة الاحتياطية...',
+          success: 'تم تحميل النسخة الاحتياطية بنجاح',
+          error: (err) => `فشل التصدير: ${err.message}`
+        }
+      );
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+  const handleManualImport = async (file: File) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      toast.error('يرجى تسجيل الدخول أولاً');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const toastId = toast.loading('جاري استيراد البيانات...');
+
+    try {
+      const res = await fetch('/api/backup', {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'فشل الاستيراد');
+      }
+
+      toast.success('تم استعادة البيانات بنجاح! جاري التحديث...', { id: toastId });
+      setTimeout(() => { window.location.reload(); }, 2000);
+    } catch (e: any) {
+      console.error(e);
+      toast.error(`خطأ: ${e.message}`, { id: toastId });
+    }
+  };
 
   useEffect(() => {
     if (user) {
       if (user.backupPath) setAutoBackupPath(user.backupPath);
       if (user.email) setNewEmail(user.email);
     }
+    // Load cloud settings from localStorage
+    const savedAutoCloud = localStorage.getItem('auto_cloud_backup') === 'true';
+    const savedLastBackup = localStorage.getItem('last_auto_backup');
+    setAutoCloudBackup(savedAutoCloud);
+    setLastAutoBackup(savedLastBackup);
   }, [user]);
+
+  const handleToggleAutoCloud = (checked: boolean) => {
+    setAutoCloudBackup(checked);
+    localStorage.setItem('auto_cloud_backup', String(checked));
+    if (checked) {
+      toast.success('تم تفعيل النسخ الاحتياطي التلقائي اليومي');
+    } else {
+      toast.info('تم إيقاف النسخ الاحتياطي التلقائي');
+    }
+  };
+
+  const handleConnectGoogle = async () => {
+    setIsConnectingGoogle(true);
+    try {
+      const res = await fetch('/api/auth/google/url');
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error(data.error || 'فشل توليد رابط الاتصال');
+      }
+    } catch (error: any) {
+      toast.error(`فشل بدء عملية الربط: ${error.message}`);
+    } finally {
+      setIsConnectingGoogle(false);
+    }
+  };
+
+  const handleDisconnectGoogle = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await supabase.auth.updateUser({
+        data: {
+          ...user.user_metadata,
+          google_refresh_token: null,
+          google_email: null
+        }
+      });
+
+      if (error) throw error;
+
+      toast.success('تم فصل الحساب بنجاح');
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (error: any) {
+      toast.error(`فشل فصل الحساب: ${error.message}`);
+    }
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('google_auth_success') === 'true') {
+      const refreshToken = params.get('refresh_token');
+      const googleEmail = params.get('google_email');
+
+      const finalize = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user && refreshToken) {
+          const { error } = await supabase.auth.updateUser({
+            data: {
+              ...user.user_metadata,
+              google_refresh_token: refreshToken,
+              google_email: googleEmail
+            }
+          });
+
+          if (error) {
+            toast.error('فشل حفظ بيانات الاتصال');
+          } else {
+            toast.success('تم ربط حساب Google Drive بنجاح');
+            // Clear params from URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        }
+      };
+      finalize();
+    } else if (params.get('error')) {
+      toast.error(`فشل عملية الربط: ${params.get('error')}`);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
   const handleSaveBackupPath = async () => {
     if (!autoBackupPath) {
@@ -466,16 +643,17 @@ export default function SettingsPage() {
         <TabsContent value="data" className="mt-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
           <div className="max-w-5xl mx-auto">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Local Backup Section */}
+
+              {/* Google Drive Backup Section */}
               <Card className="border-0 card-premium overflow-hidden flex flex-col">
-                <div className="bg-blue-600/10 p-6 border-b border-border/50">
+                <div className="bg-orange-600/10 p-6 border-b border-border/50">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 bg-blue-100 rounded-lg text-blue-600">
-                      <FolderOpen className="h-5 w-5" />
+                    <div className="p-2 bg-orange-100 rounded-lg text-orange-600">
+                      <Cloud className="h-5 w-5" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-bold font-heading">النسخ الاحتياطي التلقائي</h3>
-                      <p className="text-muted-foreground text-[10px]">حفظ نسخة محلية عند كل تغيير</p>
+                      <h3 className="text-lg font-bold font-heading">النسخ الاحتياطي السحابي (Google Drive)</h3>
+                      <p className="text-muted-foreground text-[10px]">حفظ نسخة احتياطية في حسابك على Google Drive</p>
                     </div>
                   </div>
                 </div>
@@ -483,63 +661,77 @@ export default function SettingsPage() {
                 <div className="p-6 space-y-6 flex-1">
                   <div className="bg-muted/30 border border-border/50 rounded-2xl p-5">
                     <p className="text-xs text-muted-foreground leading-relaxed mb-4">
-                      حدد مجلداً على جهازك ليقوم النظام بحفظ نسخة احتياطية تلقائياً.
-                      <strong className="text-primary block mt-1">يجب وضع المسار الكامل (Absolute Path).</strong>
+                      اربط حسابك لتفعيل النسخ الاحتياطي التلقائي اليومي على السحابة. يتم تشفير البيانات قبل الرفع.
                     </p>
-                    <div className="space-y-3">
-                      <div className="flex gap-2">
-                        <Input
-                          value={autoBackupPath}
-                          onChange={(e) => setAutoBackupPath(e.target.value)}
-                          placeholder="D:\Backups"
-                          className="h-11 flex-1 dir-ltr text-left font-mono text-xs"
-                        />
-                        <Button
-                          variant="outline"
-                          className="h-11 px-4 gap-2 font-bold"
-                          onClick={async () => {
-                            try {
-                              // @ts-ignore
-                              if (window.electron && window.electron.selectDirectory) {
-                                // @ts-ignore
-                                const path = await window.electron.selectDirectory();
-                                if (path) setAutoBackupPath(path);
-                              } else {
-                                toast.error('هذه الميزة متاحة فقط في نسخة الحاسوب');
-                              }
-                            } catch (e) {
-                              toast.error('فشل فتح منفذ اختيار المجلدات');
-                            }
-                          }}
-                        >
-                          <FolderOpen className="h-4 w-4" />
-                          اختيار مجلد
-                        </Button>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between p-3 bg-white border border-border/50 rounded-xl">
+                        <div className="flex items-center gap-3">
+                          <img src="https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive_icon_%282020%29.svg" className="h-6 w-6" alt="GDrive" />
+                          <div className="flex flex-col">
+                            <span className="font-bold text-sm">Google Drive</span>
+                            {user?.googleEmail && (
+                              <span className="text-[10px] text-muted-foreground">{user.googleEmail}</span>
+                            )}
+                          </div>
+                        </div>
+                        {user?.googleRefreshToken ? (
+                          <Badge variant="outline" className="text-[10px] bg-green-50 text-green-600 border-green-100 italic">متصل</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px] bg-red-50 text-red-600 border-red-100">غير متصل</Badge>
+                        )}
                       </div>
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={handleSaveBackupPath}
-                          disabled={isSavingBackupPath || !autoBackupPath}
-                          className="flex-1 h-11 font-bold bg-primary hover:bg-orange-600"
-                        >
-                          {isSavingBackupPath ? <Loader2 className="h-4 w-4 animate-spin" /> : 'حفظ المسار'}
-                        </Button>
-                        {autoBackupPath && (
+
+                      {user?.googleRefreshToken ? (
+                        <div className="flex gap-2">
                           <Button
                             variant="outline"
-                            className="h-11 px-3"
-                            onClick={async () => {
-                              try {
-                                await fetch('/api/system/open-folder', {
-                                  method: 'POST',
-                                  body: JSON.stringify({ path: autoBackupPath })
-                                });
-                              } catch (e) { toast.error('فشل فتح المجلد'); }
-                            }}
+                            className="flex-1 h-11 gap-2 font-bold hover:bg-red-50 border-red-200 text-red-700"
+                            onClick={handleDisconnectGoogle}
                           >
-                            <FolderOpen className="h-5 w-5" />
+                            <Trash2 className="h-4 w-4" />
+                            فصل الحساب
                           </Button>
-                        )}
+                          <Button
+                            variant="outline"
+                            className="flex-1 h-11 gap-2 font-bold hover:bg-orange-50 border-orange-200 text-orange-700"
+                            onClick={handleConnectGoogle}
+                            disabled={isConnectingGoogle}
+                          >
+                            {isConnectingGoogle ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                            تبديل
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          className="w-full h-11 gap-2 font-bold hover:bg-orange-50 border-orange-200 text-orange-700"
+                          onClick={handleConnectGoogle}
+                          disabled={isConnectingGoogle}
+                        >
+                          {isConnectingGoogle ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <KeyRound className="h-4 w-4" />
+                          )}
+                          ربط الحساب
+                        </Button>
+                      )}
+
+                      <div className="flex items-center justify-between pt-2">
+                        <div className="space-y-0.5">
+                          <Label htmlFor="auto-cloud" className="text-xs font-bold">نسخ احتياطي يومي تلقائي</Label>
+                          {lastAutoBackup && (
+                            <p className="text-[10px] text-muted-foreground italic">
+                              آخر نسخة: {new Date(lastAutoBackup).toLocaleString('ar-DZ')}
+                            </p>
+                          )}
+                        </div>
+                        <Switch
+                          id="auto-cloud"
+                          checked={autoCloudBackup}
+                          onCheckedChange={handleToggleAutoCloud}
+                          disabled={!user?.googleRefreshToken}
+                        />
                       </div>
                     </div>
                   </div>
@@ -556,16 +748,13 @@ export default function SettingsPage() {
                       </div>
                       <div>
                         <h3 className="text-lg font-bold font-heading">تصدير يدوي</h3>
-                        <p className="text-muted-foreground text-[10px]">تحميل قاعدة البيانات بصيغة ملف مضغوط</p>
+                        <p className="text-muted-foreground text-[10px]">تحميل قاعدة البيانات (Supabase) بصيغة ملف مضغوط</p>
                       </div>
                     </div>
                   </div>
                   <div className="p-6">
                     <Button
-                      onClick={() => {
-                        window.location.href = '/api/backup';
-                        toast.success('جاري التحميل...');
-                      }}
+                      onClick={handleManualExport}
                       className="w-full h-14 rounded-2xl bg-green-600 hover:bg-green-700 text-white font-black text-lg shadow-lg shadow-green-500/10"
                     >
                       تحميل نسخة شاملة (ZIP)
@@ -581,33 +770,26 @@ export default function SettingsPage() {
                       </div>
                       <div>
                         <h3 className="text-lg font-bold font-heading">استيراد بيانات</h3>
-                        <p className="text-muted-foreground text-[10px]">استرجاع قاعدة بيانات من ملف خارجي</p>
+                        <p className="text-muted-foreground text-[10px]">استرجاع قاعدة بيانات من ملف ZIP</p>
                       </div>
                     </div>
                   </div>
                   <div className="p-6 space-y-4">
                     <div className="p-4 bg-red-50 rounded-xl border border-red-100">
                       <p className="text-[10px] text-red-700 font-bold leading-relaxed">
-                        تنبيه: استيراد ملف سيؤدي لحذف البيانات الحالية تماماً.
+                        تنبيه: استيراد ملف سيؤدي لحذف البيانات الحالية تماماً واستبدالها بالنسخة الاحتياطية.
                       </p>
                     </div>
                     <Input
                       type="file"
-                      accept=".zip,.db,.sqlite"
+                      accept=".zip"
                       className="h-11 cursor-pointer"
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (!file) return;
-                        if (!confirm('هل أنت متأكد؟ سيتم استبدال البيانات!')) { e.target.value = ''; return; }
-                        const formData = new FormData();
-                        formData.append('file', file);
-                        const toastId = toast.loading('جاري الاستيراد...');
-                        try {
-                          const res = await fetch('/api/backup', { method: 'POST', body: formData });
-                          if (!res.ok) throw new Error('Failed');
-                          toast.success('تم بنجاح! جاري التحديث...', { id: toastId });
-                          setTimeout(() => { window.location.reload(); }, 1500);
-                        } catch (e) { toast.error('فشل الاستيراد', { id: toastId }); }
+                        if (!confirm('هل أنت متأكد؟ سيتم استبدال كافة البيانات الحالية!')) { e.target.value = ''; return; }
+                        await handleManualImport(file);
+                        e.target.value = ''; // Reset input
                       }}
                     />
                   </div>
@@ -1129,7 +1311,7 @@ export default function SettingsPage() {
                       const typeConfig = [
                         { type: 'company', label: 'شركة', Icon: Building2, color: 'text-orange-600', bg: 'bg-orange-500/10' },
                         { type: 'fournisseur', label: 'مزود', Icon: Truck, color: 'text-blue-600', bg: 'bg-blue-500/10' },
-                        { type: 'currency_company', label: 'شركة عملة', Icon: Banknote, color: 'text-green-600', bg: 'bg-green-500/10' },
+                        { type: 'currency_company', label: 'مكتب صرف', Icon: Banknote, color: 'text-green-600', bg: 'bg-green-500/10' },
                         { type: 'transaction', label: 'معاملة', Icon: FileText, color: 'text-purple-600', bg: 'bg-purple-500/10' },
                         { type: 'currency_transaction', label: 'تحويل عملة', Icon: ArrowLeftRight, color: 'text-amber-600', bg: 'bg-amber-500/10' },
                       ].find(t => t.type === item.itemType) || { type: 'unknown', label: 'غير معروف', Icon: AlertCircle, color: 'text-gray-600', bg: 'bg-gray-500/10' };

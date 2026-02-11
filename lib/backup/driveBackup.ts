@@ -22,9 +22,21 @@ import { google } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
 
-// Backup file name on Google Drive
-const BACKUP_FILE_NAME = 'bossnouadi-backup.db';
+// Backup configuration
+const BACKUP_PREFIX = 'backup-';
+const BACKUP_EXTENSION = '.db';
 const BACKUP_FOLDER_NAME = 'BossNouadiBackups';
+const MAX_BACKUPS = 30;
+
+/**
+ * Generate a timestamped backup filename
+ */
+function generateBackupFileName(): string {
+  const now = new Date();
+  const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+  return `${BACKUP_PREFIX}${dateStr}${BACKUP_EXTENSION}`;
+}
+
 
 // Types
 export interface BackupResult {
@@ -41,20 +53,30 @@ export interface RestoreResult {
 }
 
 /**
- * Get Google Drive client using Service Account credentials
+ * Get Google Drive client
+ * Supports both OAuth2 (User) and Service Account
  */
-async function getDriveClient() {
-  // TODO: Configure these environment variables
-  // GOOGLE_SERVICE_ACCOUNT_KEYFILE: Path to the JSON key file
-  // GOOGLE_SERVICE_ACCOUNT_KEY: JSON content of the key (alternative)
+async function getDriveClient(refreshToken?: string) {
+  // 1. If refreshToken is provided, use User OAuth2
+  if (refreshToken) {
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI
+    );
 
+    oauth2Client.setCredentials({ refresh_token: refreshToken });
+    return google.drive({ version: 'v3', auth: oauth2Client });
+  }
+
+  // 2. Fallback to Service Account
   const keyFilePath = process.env.GOOGLE_SERVICE_ACCOUNT_KEYFILE;
   const keyContent = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
 
   if (!keyFilePath && !keyContent) {
     throw new Error(
       'Google Drive credentials not configured. ' +
-      'Set GOOGLE_SERVICE_ACCOUNT_KEYFILE or GOOGLE_SERVICE_ACCOUNT_KEY environment variable.'
+      'Please link your account or set Service Account environment variables.'
     );
   }
 
@@ -112,13 +134,43 @@ async function getOrCreateBackupFolder(drive: any): Promise<string> {
 }
 
 /**
- * Find existing backup file in Google Drive
+ * Clean up old backups, keeping only the most recent MAX_BACKUPS
  */
-async function findBackupFile(drive: any, folderId: string): Promise<string | null> {
+async function cleanupOldBackups(drive: any, folderId: string) {
+  try {
+    const response = await drive.files.list({
+      q: `'${folderId}' in parents and name contains '${BACKUP_PREFIX}' and trashed=false`,
+      fields: 'files(id, name, createdTime)',
+      orderBy: 'createdTime desc',
+    });
+
+    const files = response.data.files || [];
+
+    if (files.length > MAX_BACKUPS) {
+      console.log(`[Backup] Found ${files.length} backups, cleaning up ${files.length - MAX_BACKUPS} oldest ones...`);
+
+      const filesToDelete = files.slice(MAX_BACKUPS);
+      for (const file of filesToDelete) {
+        if (file.id) {
+          await drive.files.delete({ fileId: file.id });
+          console.log(`[Backup] Deleted old backup: ${file.name} (${file.id})`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[Backup] Cleanup failed:', error);
+  }
+}
+
+/**
+ * Find the latest backup file in Google Drive
+ */
+async function findLatestBackupFile(drive: any, folderId: string): Promise<string | null> {
   const fileSearch = await drive.files.list({
-    q: `name='${BACKUP_FILE_NAME}' and '${folderId}' in parents and trashed=false`,
+    q: `'${folderId}' in parents and name contains '${BACKUP_PREFIX}' and trashed=false`,
     fields: 'files(id, name, modifiedTime)',
     orderBy: 'modifiedTime desc',
+    pageSize: 1,
   });
 
   if (fileSearch.data.files && fileSearch.data.files.length > 0) {
@@ -128,78 +180,136 @@ async function findBackupFile(drive: any, folderId: string): Promise<string | nu
   return null;
 }
 
+
+/**
+ * Backup a data buffer (e.g. ZIP of Supabase data) to Google Drive
+ */
+export async function backupBufferToDrive(content: Buffer, refreshToken?: string, customFileName?: string): Promise<BackupResult> {
+  try {
+    console.log('[Backup] Starting buffer backup to Google Drive...');
+
+    const drive = await getDriveClient(refreshToken);
+    const folderId = await getOrCreateBackupFolder(drive);
+
+    const fileName = customFileName || generateBackupFileName();
+
+    // Check if a backup with this name already exists
+    const existingFileSearch = await drive.files.list({
+      q: `name='${fileName}' and '${folderId}' in parents and trashed=false`,
+      fields: 'files(id)',
+    });
+
+    const body = new (require('stream').PassThrough)();
+    body.end(content);
+    const media = { mimeType: 'application/zip', body };
+
+    let response;
+    const fileId = existingFileSearch.data.files?.[0]?.id;
+
+    if (fileId) {
+      response = await drive.files.update({
+        fileId: fileId,
+        requestBody: { name: fileName },
+        media,
+        fields: 'id, name, modifiedTime',
+      });
+      console.log('[Backup] Updated existing backup file:', fileName);
+    } else {
+      response = await drive.files.create({
+        requestBody: {
+          name: fileName,
+          parents: [folderId],
+        },
+        media,
+        fields: 'id, name, modifiedTime',
+      });
+      console.log('[Backup] Created new backup file:', fileName);
+    }
+
+    // Clean up old backups (keep only 30)
+    await cleanupOldBackups(drive, folderId);
+
+    const timestamp = new Date().toISOString();
+    return {
+      success: true,
+      message: 'تم حفظ النسخة السحابية بنجاح على Google Drive (يتم الاحتفاظ بآخر 30 نسخة)',
+      fileId: (response as any).data.id || undefined,
+      timestamp,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[Backup] Buffer backup failed:', errorMessage);
+    return { success: false, message: `فشل الحفظ السحابي: ${errorMessage}` };
+  }
+}
+
 /**
  * Backup the SQLite database to Google Drive
  * 
  * @param dbPath - Path to the SQLite database file
  * @returns BackupResult with success status and details
  */
-export async function backupToDrive(dbPath: string): Promise<BackupResult> {
+export async function backupToDrive(dbPath: string, refreshToken?: string): Promise<BackupResult> {
   try {
-    // Check if database file exists
     if (!fs.existsSync(dbPath)) {
-      return {
-        success: false,
-        message: `Database file not found: ${dbPath}`,
-      };
+      return { success: false, message: `Database file not found: ${dbPath}` };
     }
 
     console.log('[Backup] Starting backup to Google Drive...');
 
-    const drive = await getDriveClient();
+    const drive = await getDriveClient(refreshToken);
     const folderId = await getOrCreateBackupFolder(drive);
 
-    // Check if backup file already exists
-    const existingFileId = await findBackupFile(drive, folderId);
+    const fileName = generateBackupFileName();
 
-    const fileMetadata = {
-      name: BACKUP_FILE_NAME,
-      parents: existingFileId ? undefined : [folderId],
-    };
+    // Check if a backup for TODAY already exists to avoid duplicates
+    const existingFileSearch = await drive.files.list({
+      q: `name='${fileName}' and '${folderId}' in parents and trashed=false`,
+      fields: 'files(id)',
+    });
 
-    const media = {
-      mimeType: 'application/x-sqlite3',
-      body: fs.createReadStream(dbPath),
-    };
+    const fileId = existingFileSearch.data.files?.[0]?.id;
+    const body = fs.createReadStream(dbPath);
+    const media = { mimeType: 'application/x-sqlite3', body };
 
     let response;
 
-    if (existingFileId) {
-      // Update existing file
+    if (fileId) {
+      // Update today's backup if it already exists
       response = await drive.files.update({
-        fileId: existingFileId,
-        requestBody: { name: BACKUP_FILE_NAME },
+        fileId: fileId,
+        requestBody: { name: fileName },
         media,
         fields: 'id, name, modifiedTime',
       });
-      console.log('[Backup] Updated existing backup file');
+      console.log('[Backup] Updated today\'s backup file');
     } else {
-      // Create new file
+      // Create a brand new backup file for today
       response = await drive.files.create({
-        requestBody: fileMetadata,
+        requestBody: {
+          name: fileName,
+          parents: [folderId],
+        },
         media,
         fields: 'id, name, modifiedTime',
       });
-      console.log('[Backup] Created new backup file');
+      console.log('[Backup] Created new backup file for today');
     }
 
-    const timestamp = new Date().toISOString();
-    console.log('[Backup] Backup completed:', response.data.id);
+    // Clean up old backups (keep only 30)
+    await cleanupOldBackups(drive, folderId);
 
+    const timestamp = new Date().toISOString();
     return {
       success: true,
-      message: 'تم حفظ النسخة الاحتياطية بنجاح على Google Drive',
-      fileId: response.data.id || undefined,
+      message: 'تم حفظ النسخة الاحتياطية بنجاح على Google Drive (يتم الاحتفاظ بآخر 30 نسخة)',
+      fileId: (response as any).data.id || undefined,
       timestamp,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('[Backup] Backup failed:', errorMessage);
-
-    return {
-      success: false,
-      message: `فشل حفظ النسخة الاحتياطية: ${errorMessage}`,
-    };
+    return { success: false, message: `فشل حفظ النسخة الاحتياطية: ${errorMessage}` };
   }
 }
 
@@ -209,13 +319,13 @@ export async function backupToDrive(dbPath: string): Promise<BackupResult> {
  * @param dbPath - Path where the database should be restored
  * @returns RestoreResult with success status and details
  */
-export async function restoreFromDrive(dbPath: string): Promise<RestoreResult> {
+export async function restoreFromDrive(dbPath: string, refreshToken?: string): Promise<RestoreResult> {
   try {
     console.log('[Backup] Starting restore from Google Drive...');
 
-    const drive = await getDriveClient();
+    const drive = await getDriveClient(refreshToken);
     const folderId = await getOrCreateBackupFolder(drive);
-    const fileId = await findBackupFile(drive, folderId);
+    const fileId = await findLatestBackupFile(drive, folderId);
 
     if (!fileId) {
       return {
@@ -281,19 +391,20 @@ export async function restoreFromDrive(dbPath: string): Promise<RestoreResult> {
 /**
  * Get information about the latest backup on Google Drive
  */
-export async function getBackupInfo(): Promise<{
+export async function getBackupInfo(refreshToken?: string): Promise<{
   exists: boolean;
   lastModified?: string;
   fileId?: string;
 }> {
   try {
-    const drive = await getDriveClient();
+    const drive = await getDriveClient(refreshToken);
     const folderId = await getOrCreateBackupFolder(drive);
 
     const fileSearch = await drive.files.list({
-      q: `name='${BACKUP_FILE_NAME}' and '${folderId}' in parents and trashed=false`,
+      q: `'${folderId}' in parents and name contains '${BACKUP_PREFIX}' and trashed=false`,
       fields: 'files(id, name, modifiedTime)',
       orderBy: 'modifiedTime desc',
+      pageSize: 1,
     });
 
     if (fileSearch.data.files && fileSearch.data.files.length > 0) {
@@ -315,6 +426,6 @@ export async function getBackupInfo(): Promise<{
 /**
  * Check if Google Drive credentials are configured
  */
-export function isBackupConfigured(): boolean {
-  return !!(process.env.GOOGLE_SERVICE_ACCOUNT_KEYFILE || process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
+export function isBackupConfigured(refreshToken?: string): boolean {
+  return !!(refreshToken || process.env.GOOGLE_SERVICE_ACCOUNT_KEYFILE || process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
 }
