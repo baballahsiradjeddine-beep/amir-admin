@@ -23,9 +23,9 @@ import fs from 'fs';
 import path from 'path';
 
 // Backup configuration
-const BACKUP_PREFIX = 'backup-';
-const BACKUP_EXTENSION = '.db';
-const BACKUP_FOLDER_NAME = 'BossNouadiBackups';
+const BACKUP_PREFIX = 'نسخة_موقع_أمير_نوادي_';
+const BACKUP_EXTENSION = '.zip';
+const BACKUP_FOLDER_NAME = 'بيانات موقع أمير نوادي';
 const MAX_BACKUPS = 30;
 
 /**
