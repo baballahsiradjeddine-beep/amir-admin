@@ -203,11 +203,34 @@ export default function SettingsPage() {
     setLastAutoBackup(savedLastBackup);
   }, [user]);
 
-  const handleToggleAutoCloud = (checked: boolean) => {
+  const handleToggleAutoCloud = async (checked: boolean) => {
     setAutoCloudBackup(checked);
     localStorage.setItem('auto_cloud_backup', String(checked));
+
     if (checked) {
-      toast.success('تم تفعيل النسخ الاحتياطي التلقائي اليومي');
+      toast.info('جاري بدء أول نسخة احتياطية سحابية للتأكد من الربط...');
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        const res = await fetch('/api/backup/auto-cloud', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        });
+
+        if (res.ok) {
+          const now = new Date().toISOString();
+          setLastAutoBackup(now);
+          localStorage.setItem('last_auto_backup', now);
+          toast.success('تم رفع النسخة السحابية بنجاح! ستجدها في Drive الآن.');
+        } else {
+          toast.error('لم نتمكن من رفع النسخة الأولى، يرجى التحقق من إعدادات Vercel');
+        }
+      } catch (error) {
+        console.error(error);
+      }
     } else {
       toast.info('تم إيقاف النسخ الاحتياطي التلقائي');
     }
